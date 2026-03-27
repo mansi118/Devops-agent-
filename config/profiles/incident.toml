@@ -1,0 +1,53 @@
+[profile]
+name = "incident"
+description = "Emergency incident response — can restart services"
+autonomy = "semi"
+risk_level = "high"
+
+[permissions]
+read = true
+write = true
+execute = true
+deploy = false
+restart = true
+
+[allowed_actions]
+service_restart = true
+connection_pool_reset = true
+cache_purge = true
+dns_failover = false
+log_read = true
+metric_query = true
+health_check = true
+context_vault_read = true
+context_vault_write = true
+rollback_last = true
+
+[auto_remediation]
+enabled = true
+max_auto_restarts = 3
+restart_cooldown_minutes = 5
+known_patterns = [
+  "connection_pool_exhausted",
+  "disk_space_critical",
+  "oom_killed",
+  "tls_expired",
+  "recent_deploy_regression"
+]
+
+[escalation]
+p1_timeout_minutes = 5
+p2_timeout_minutes = 15
+p3_timeout_minutes = 60
+whatsapp_on_p1 = true
+phone_call_on_p1_unresolved = true
+phone_call_timeout_minutes = 30
+
+[escalation.contacts]
+level_1 = ["#ops-alerts"]
+level_2 = ["shivam", "ankit"]
+level_3 = ["ml"]
+
+[rate_limits]
+restarts_per_hour = 10
+api_calls_per_minute = 200

@@ -1,0 +1,199 @@
+{
+  "name": "Ops NEop — Incident Response",
+  "nodes": [
+    {
+      "id": "alert-webhook",
+      "name": "Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "parameters": {
+        "path": "alert",
+        "httpMethod": "POST",
+        "responseMode": "onReceived"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "classify-severity",
+      "name": "Classify Severity",
+      "type": "n8n-nodes-base.code",
+      "position": [470, 300],
+      "parameters": {
+        "jsCode": "const alert = $input.first().json;\nlet severity = 'P3';\n\nif (alert.status === 'firing') {\n  const labels = alert.labels || {};\n  if (labels.severity === 'critical' || labels.severity === 'P1') severity = 'P1';\n  else if (labels.severity === 'warning' || labels.severity === 'P2') severity = 'P2';\n  else severity = 'P3';\n}\n\nreturn [{\n  json: {\n    ...alert,\n    severity,\n    incident_id: `INC-${Date.now()}`,\n    detected_at: new Date().toISOString(),\n    service: alert.labels?.job || alert.labels?.service || 'unknown'\n  }\n}];"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "check-recent-deploys",
+      "name": "Check Recent Deployments",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [690, 200],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "context_vault_query",
+          "input": { "table": "deployments", "filter": { "environment": "production" }, "limit": 5, "order": "desc" }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "fetch-logs",
+      "name": "Fetch Application Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [690, 400],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "cloudwatch_query",
+          "input": { "log_group": "={{ $json.service }}", "query": "fields @timestamp, @message | filter @message like /ERROR|FATAL|Exception/ | sort @timestamp desc | limit 50", "time_range": "30m" }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "context-vault-search",
+      "name": "Search Past Incidents",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [910, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "context_vault_query",
+          "input": { "table": "incidents", "search": "={{ $json.annotations?.description || $json.labels?.alertname }}", "limit": 5 }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "llm-analysis",
+      "name": "LLM Root Cause Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1130, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": {
+            "prompt": "Incident detected. Analyze root cause using the logs, recent deployments, and similar past incidents. Classify as known or novel pattern. If known pattern, recommend auto-fix. If novel, provide detailed analysis.",
+            "context": "={{ JSON.stringify({ alert: $json, logs: $node['Fetch Application Logs'].json, recent_deploys: $node['Check Recent Deployments'].json, past_incidents: $node['Search Past Incidents'].json }) }}",
+            "profile": "incident"
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "decision",
+      "name": "Known Pattern?",
+      "type": "n8n-nodes-base.if",
+      "position": [1350, 300],
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $json.is_known_pattern }}", "value2": true }]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "auto-fix",
+      "name": "Apply Auto-Fix",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1570, 200],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": {
+            "prompt": "Apply the recommended fix for this known incident pattern. Execute the remediation steps and verify service health.",
+            "context": "={{ JSON.stringify($json) }}",
+            "profile": "incident",
+            "tools": ["restart_service", "rollback", "health_check"]
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "escalate",
+      "name": "Escalate to Team",
+      "type": "n8n-nodes-base.slack",
+      "position": [1570, 400],
+      "parameters": {
+        "channel": "#ops-alerts",
+        "text": "INCIDENT {{ $json.incident_id }} — {{ $json.severity }}",
+        "attachments": [
+          {
+            "color": "={{ $json.severity === 'P1' ? '#ff0000' : $json.severity === 'P2' ? '#ff9900' : '#ffcc00' }}",
+            "title": "{{ $json.severity }} Incident: {{ $json.service }}",
+            "text": "{{ $json.analysis }}",
+            "fields": [
+              { "title": "Service", "value": "{{ $json.service }}", "short": true },
+              { "title": "Severity", "value": "{{ $json.severity }}", "short": true },
+              { "title": "Root Cause", "value": "{{ $json.root_cause || 'Under investigation' }}", "short": false }
+            ],
+            "actions": [
+              { "type": "button", "text": "Acknowledge", "name": "ack", "value": "{{ $json.incident_id }}" },
+              { "type": "button", "text": "Escalate", "name": "escalate", "value": "{{ $json.incident_id }}", "style": "danger" }
+            ]
+          }
+        ]
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "update-context-vault",
+      "name": "Update Context Vault",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1790, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "context_vault_write",
+          "input": {
+            "table": "incidents",
+            "data": {
+              "incident_id": "={{ $json.incident_id }}",
+              "severity": "={{ $json.severity }}",
+              "service": "={{ $json.service }}",
+              "root_cause": "={{ $json.root_cause }}",
+              "resolution": "={{ $json.resolution }}",
+              "was_auto_resolved": "={{ $json.is_known_pattern }}"
+            }
+          }
+        }
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Alert Webhook": { "main": [[{ "node": "Classify Severity", "type": "main", "index": 0 }]] },
+    "Classify Severity": { "main": [[{ "node": "Check Recent Deployments", "type": "main", "index": 0 }, { "node": "Fetch Application Logs", "type": "main", "index": 0 }]] },
+    "Check Recent Deployments": { "main": [[{ "node": "Search Past Incidents", "type": "main", "index": 0 }]] },
+    "Fetch Application Logs": { "main": [[{ "node": "Search Past Incidents", "type": "main", "index": 0 }]] },
+    "Search Past Incidents": { "main": [[{ "node": "LLM Root Cause Analysis", "type": "main", "index": 0 }]] },
+    "LLM Root Cause Analysis": { "main": [[{ "node": "Known Pattern?", "type": "main", "index": 0 }]] },
+    "Known Pattern?": {
+      "main": [
+        [{ "node": "Apply Auto-Fix", "type": "main", "index": 0 }],
+        [{ "node": "Escalate to Team", "type": "main", "index": 0 }]
+      ]
+    },
+    "Apply Auto-Fix": { "main": [[{ "node": "Update Context Vault", "type": "main", "index": 0 }]] },
+    "Escalate to Team": { "main": [[{ "node": "Update Context Vault", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "ops-neop" }, { "name": "incident-response" }]
+}

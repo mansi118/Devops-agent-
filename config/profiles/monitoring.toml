@@ -1,0 +1,34 @@
+[profile]
+name = "monitoring"
+description = "Read-only monitoring and investigation — default for cron jobs"
+autonomy = "full"
+risk_level = "none"
+
+[permissions]
+read = true
+write = false
+execute = false
+deploy = false
+restart = false
+
+[allowed_actions]
+health_check = true
+log_read = true
+metric_query = true
+alert_send = true
+context_vault_read = true
+context_vault_write = false
+github_read = true
+github_write = false
+aws_read = true
+aws_write = false
+
+[rate_limits]
+health_checks_per_minute = 12
+api_calls_per_minute = 60
+slack_messages_per_hour = 30
+
+[escalation]
+enabled = true
+timeout_minutes = 30
+channels = ["#ops-alerts"]

@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+scrape_configs:
+  - job_name: "ops-neop"
+    static_configs:
+      - targets: ["localhost:8765"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: "docker"
+    static_configs:
+      - targets: ["localhost:9323"]
+
+  - job_name: "neuraledge-services"
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - "13.233.60.59:3000"
+        labels:
+          service: "openclaw"
+      - targets:
+          - "n8n.neuraledge.in:443"
+        labels:
+          service: "n8n"
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  - job_name: "slack-bot"
+    static_configs:
+      - targets: ["localhost:3001"]
+    metrics_path: /metrics
+    scrape_interval: 30s

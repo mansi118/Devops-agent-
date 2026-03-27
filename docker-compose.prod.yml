@@ -1,0 +1,86 @@
+version: "3.8"
+
+services:
+  stakpak:
+    image: ghcr.io/stakpak/agent:latest
+    volumes:
+      - ./config:/root/.stakpak:ro
+      - ./neps:/root/.stakpak/rulebooks:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - STAKPAK_API_KEY=${STAKPAK_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - STAKPAK_MACHINE_NAME=ops-prod-01
+    ports:
+      - "8765:8765"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ops-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  slack-bot:
+    build: ./slack-bot
+    environment:
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - STAKPAK_URL=http://stakpak:8765
+      - APPROVAL_CHANNEL=#ops-approvals
+      - DEPLOY_CHANNEL=#deployments
+      - METRICS_CHANNEL=#eng-metrics
+    ports:
+      - "3001:3001"
+    restart: always
+    depends_on:
+      - stakpak
+    networks:
+      - ops-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: always
+    networks:
+      - ops-network
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - "9100:9100"
+    restart: always
+    networks:
+      - ops-network
+
+volumes:
+  prometheus-data:
+
+networks:
+  ops-network:
+    driver: bridge

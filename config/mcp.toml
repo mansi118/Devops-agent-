@@ -1,0 +1,98 @@
+# ============================================================
+# Ops NEop — MCP Server Configuration
+# Connects to all external services and NEOS NEops
+# ============================================================
+
+[mcp.github]
+url = "https://api.github.com/mcp"
+auth = "$GITHUB_TOKEN"
+tools = [
+  "get_repo", "list_prs", "get_workflow_runs", "get_workflow_run",
+  "create_issue", "get_diff", "get_logs", "create_pr_comment",
+  "list_commits", "get_file_contents", "create_or_update_file"
+]
+rate_limit = 5000
+retry_count = 3
+retry_delay_ms = 1000
+
+[mcp.aws]
+url = "https://aws-mcp.neuraledge.in/sse"
+auth = "$AWS_MCP_TOKEN"
+tools = [
+  "ec2_list", "ec2_describe", "ec2_start", "ec2_stop",
+  "cloudwatch_query", "cloudwatch_put_metric",
+  "s3_list", "s3_get", "s3_put",
+  "secrets_get", "secrets_rotate",
+  "rds_describe", "rds_metrics",
+  "route53_list", "route53_update",
+  "ecr_list", "ecr_describe", "ecr_scan"
+]
+region = "ap-south-1"
+retry_count = 3
+
+[mcp.slack]
+url = "https://slack-mcp.neuraledge.in/sse"
+auth = "$SLACK_BOT_TOKEN"
+tools = [
+  "send_message", "create_approval", "get_channel_history",
+  "update_message", "add_reaction", "upload_file"
+]
+retry_count = 2
+
+[mcp.docker]
+url = "unix:///var/run/docker.sock"
+tools = [
+  "docker_build", "docker_push", "docker_pull", "docker_tag",
+  "docker_inspect", "docker_logs", "docker_ps", "docker_prune"
+]
+
+[mcp.terraform]
+url = "https://app.terraform.io/api/v2"
+auth = "$TF_API_TOKEN"
+organization = "neuraledge"
+tools = [
+  "tf_plan", "tf_apply", "tf_state", "tf_output",
+  "tf_workspace_list", "tf_run_status"
+]
+
+[mcp.prometheus]
+url = "http://localhost:9090/api/v1"
+tools = [
+  "query", "query_range", "alerts", "targets",
+  "rules", "series", "label_values"
+]
+
+[mcp.grafana]
+url = "http://localhost:3000/api"
+auth = "$GRAFANA_API_KEY"
+tools = [
+  "create_dashboard", "update_dashboard", "create_alert",
+  "get_dashboard", "search_dashboards"
+]
+
+[mcp.notion]
+url = "https://n8n.neuraledge.in/mcp/89acc4c7-47c7-483a-9533-e7e7fc0de4ec/sse"
+tools = ["search_pages", "create_page", "update_page", "get_page"]
+
+[mcp.fireflies]
+url = "https://api.fireflies.ai/mcp"
+auth = "$FIREFLIES_API_KEY"
+tools = ["get_transcript", "search_meetings", "get_summary"]
+
+[mcp.snyk]
+url = "https://api.snyk.io/v1"
+auth = "$SNYK_API_TOKEN"
+tools = ["container_test", "dependency_test", "get_issues", "get_sbom"]
+
+[mcp.neos]
+url = "https://neos-mcp.neuraledge.in/sse"
+auth = "$NEOS_INTERNAL_TOKEN"
+tools = [
+  "send_to_neop", "context_vault_query", "context_vault_write",
+  "nep_update", "nep_read", "get_neop_status"
+]
+description = "NEOS internal bus for NEop-to-NEop communication"
+
+[mcp.lets_encrypt]
+url = "https://acme-v02.api.letsencrypt.org/directory"
+tools = ["issue_cert", "renew_cert", "check_cert_status"]

@@ -1,0 +1,40 @@
+[profile]
+name = "deploy"
+description = "CI/CD pipeline execution — builds, tests, deploys"
+autonomy = "semi"
+risk_level = "medium"
+
+[permissions]
+read = true
+write = true
+execute = true
+deploy = true
+restart = false
+
+[allowed_actions]
+docker_build = true
+docker_push = true
+test_execute = true
+staging_deploy = true
+canary_deploy = true
+production_deploy = false
+rollback = false
+security_scan = true
+context_vault_read = true
+context_vault_write = true
+
+[approval]
+required_for = ["production_deploy", "rollback"]
+channel = "#ops-approvals"
+timeout_minutes = 30
+required_approvers = 1
+allowed_approvers = ["shivam", "ankit", "ml"]
+
+[rate_limits]
+deployments_per_hour = 5
+builds_per_hour = 20
+api_calls_per_minute = 120
+
+[rollback]
+auto_rollback_on_canary_failure = true
+max_rollback_depth = 3

@@ -1,0 +1,109 @@
+# ============================================================
+# Ops NEop — Stakpak Configuration
+# NeuralEDGE DevOps Agent v1.0
+# ============================================================
+
+[agent]
+name = "ops-neop"
+version = "1.0.0"
+machine_name = "ops-prod-01"
+log_level = "info"
+log_file = "/var/log/ops-neop/agent.log"
+
+[agent.llm]
+primary = "claude-sonnet-4"
+fallback = "glm-5-local"
+max_tokens = 4096
+temperature = 0.2
+
+[agent.llm.providers.claude]
+api_base = "https://api.anthropic.com/v1"
+model = "claude-sonnet-4-20250514"
+api_key = "$ANTHROPIC_API_KEY"
+
+[agent.llm.providers.glm5]
+api_base = "http://localhost:8080/v1"
+model = "glm-5"
+
+[agent.context_vault]
+provider = "convex"
+deployment_url = "$CONVEX_DEPLOYMENT_URL"
+api_key = "$CONVEX_API_KEY"
+
+[agent.audit]
+enabled = true
+s3_bucket = "neuraledge-ops-audit"
+s3_region = "ap-south-1"
+retention_days = 365
+log_format = "json"
+
+[agent.notifications]
+slack_bot_token = "$SLACK_BOT_TOKEN"
+slack_app_token = "$SLACK_APP_TOKEN"
+
+[agent.notifications.channels]
+alerts = "#ops-alerts"
+approvals = "#ops-approvals"
+deployments = "#deployments"
+metrics = "#eng-metrics"
+
+# ============================================================
+# Profile: Monitoring (Read-Only)
+# Default for cron jobs and health checks
+# ============================================================
+[profiles.monitoring]
+description = "Read-only monitoring and investigation"
+allowed_tools = [
+  "view", "search_docs", "health_check",
+  "cloudwatch_query", "prometheus_query",
+  "github_get_workflow_runs", "github_get_logs",
+  "context_vault_search", "slack_notify"
+]
+auto_approve = []
+escalate_after = "30m"
+
+# ============================================================
+# Profile: Deploy
+# CI/CD pipeline execution
+# ============================================================
+[profiles.deploy]
+description = "CI/CD pipeline execution"
+allowed_tools = [
+  "view", "search_docs", "run_command",
+  "docker_build", "docker_push", "stakpak_deploy",
+  "github_get_diff", "github_create_issue",
+  "context_vault_write", "context_vault_search",
+  "slack_notify", "slack_create_approval",
+  "snyk_scan", "ecr_push"
+]
+auto_approve = ["staging"]
+require_approval = ["production"]
+approval_channel = "#ops-approvals"
+approval_timeout = "30m"
+
+# ============================================================
+# Profile: Incident
+# Emergency incident response
+# ============================================================
+[profiles.incident]
+description = "Emergency incident response"
+allowed_tools = [
+  "view", "search_docs", "run_command",
+  "restart_service", "health_check", "rollback",
+  "cloudwatch_query", "prometheus_query",
+  "context_vault_search", "context_vault_write",
+  "slack_notify", "whatsapp_alert"
+]
+escalate_after = "15m"
+auto_restart = true
+max_auto_restarts = 3
+
+# ============================================================
+# Profile: Admin
+# Full access — manual use only (ML/Shivam)
+# ============================================================
+[profiles.admin]
+description = "Full access — manual use only"
+allowed_tools = ["*"]
+require_mfa = true
+audit_level = "verbose"

@@ -1,0 +1,127 @@
+{
+  "name": "Ops NEop — Health Check (5min)",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 5 }] }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "check-endpoints",
+      "name": "Check All Endpoints",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "health_check",
+          "input": {
+            "endpoints": [
+              { "name": "NEOS API", "url": "https://api.neuraledge.in/health", "timeout": 5000 },
+              { "name": "n8n", "url": "https://n8n.neuraledge.in/healthz", "timeout": 5000 },
+              { "name": "OpenClaw", "url": "http://13.233.60.59:3000/health", "timeout": 5000 },
+              { "name": "Ops Agent", "url": "http://localhost:8765/health", "timeout": 3000 }
+            ],
+            "checks": ["endpoint_availability", "disk_space", "memory_usage", "cpu_usage", "docker_health"]
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "parse-results",
+      "name": "Parse Results",
+      "type": "n8n-nodes-base.code",
+      "position": [690, 300],
+      "parameters": {
+        "jsCode": "const results = $input.first().json;\nconst failures = results.checks.filter(c => c.status !== 'healthy');\nconst warnings = results.checks.filter(c => c.status === 'warning');\n\nreturn [{\n  json: {\n    total_checks: results.checks.length,\n    healthy: results.checks.filter(c => c.status === 'healthy').length,\n    failures: failures,\n    warnings: warnings,\n    has_failures: failures.length > 0,\n    has_warnings: warnings.length > 0,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "check-failures",
+      "name": "Any Failures?",
+      "type": "n8n-nodes-base.if",
+      "position": [910, 300],
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $json.has_failures }}", "value2": true }]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "investigate",
+      "name": "Investigate Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1130, 200],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": {
+            "prompt": "Health check failures detected. Investigate root cause. Check recent deployments, logs, and metrics. If known pattern, apply auto-fix.",
+            "context": "={{ JSON.stringify($json.failures) }}",
+            "profile": "incident",
+            "tools": ["context_vault_search", "cloudwatch_query", "prometheus_query", "github_get_workflow_runs"]
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "notify-slack",
+      "name": "Notify Slack",
+      "type": "n8n-nodes-base.slack",
+      "position": [1350, 200],
+      "parameters": {
+        "channel": "#ops-alerts",
+        "text": "Health Check Alert",
+        "attachments": [
+          {
+            "color": "#ff0000",
+            "title": "Health Check Failures Detected",
+            "text": "={{ $json.failures.map(f => `- ${f.name}: ${f.error}`).join('\\n') }}",
+            "fields": [
+              { "title": "Failed", "value": "{{ $json.failures.length }}", "short": true },
+              { "title": "Total", "value": "{{ $json.total_checks }}", "short": true }
+            ],
+            "ts": "={{ Math.floor(Date.now() / 1000) }}"
+          }
+        ]
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "log-healthy",
+      "name": "Log Healthy Status",
+      "type": "n8n-nodes-base.noOp",
+      "position": [1130, 400],
+      "parameters": {},
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": { "main": [[{ "node": "Check All Endpoints", "type": "main", "index": 0 }]] },
+    "Check All Endpoints": { "main": [[{ "node": "Parse Results", "type": "main", "index": 0 }]] },
+    "Parse Results": { "main": [[{ "node": "Any Failures?", "type": "main", "index": 0 }]] },
+    "Any Failures?": {
+      "main": [
+        [{ "node": "Investigate Failure", "type": "main", "index": 0 }],
+        [{ "node": "Log Healthy Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Investigate Failure": { "main": [[{ "node": "Notify Slack", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "ops-neop" }, { "name": "health-check" }]
+}

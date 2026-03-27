@@ -1,0 +1,5 @@
+.github
+target/
+.git/
+*.log
+.stakpak/

@@ -1,0 +1,11 @@
+{
+  "name": "ops-neop-convex",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "convex": "^1.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

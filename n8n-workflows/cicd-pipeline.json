@@ -1,0 +1,324 @@
+{
+  "name": "Ops NEop — CI/CD Pipeline",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "GitHub Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "parameters": {
+        "path": "github-push",
+        "httpMethod": "POST",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "filter-events",
+      "name": "Filter Events",
+      "type": "n8n-nodes-base.if",
+      "position": [470, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.ref }}",
+              "operation": "regex",
+              "value2": "refs/heads/(main|production)"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "ai-risk-triage",
+      "name": "AI Risk Triage",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [690, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": {
+            "prompt": "Analyze this PR diff and rate deployment risk 1-10. Consider: files changed, complexity, blast radius, test coverage, past failure patterns for these files.",
+            "context": "={{ JSON.stringify($json.commits) }}",
+            "tools": ["github_diff", "context_vault_search"]
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "risk-check",
+      "name": "Risk Check",
+      "type": "n8n-nodes-base.if",
+      "position": [910, 300],
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.risk_score }}",
+              "operation": "smallerThan",
+              "value2": 8
+            }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "docker-build",
+      "name": "Docker Build",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [1130, 250],
+      "parameters": {
+        "command": "docker build --cache-from=type=registry,ref=ecr.neuraledge.in/{{ $json.repository.name }}:cache -t {{ $json.repository.name }}:{{ $json.after }} ."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "ai-test-selection",
+      "name": "AI Test Selection",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1350, 250],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": {
+            "prompt": "Given these changed files, select the minimum test suite that covers the changes. Return test file paths as a JSON array.",
+            "context": "={{ JSON.stringify($json.commits.map(c => c.modified).flat()) }}"
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "run-tests",
+      "name": "Run Tests",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [1570, 250],
+      "parameters": {
+        "command": "pytest {{ $json.test_files.join(' ') }} --junit-xml=results.xml -v"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "security-scan-snyk",
+      "name": "Snyk Container Scan",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [1570, 100],
+      "parameters": {
+        "command": "snyk container test {{ $json.repository.name }}:{{ $json.after }} --json"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "security-scan-deps",
+      "name": "Dependency Audit",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [1570, 400],
+      "parameters": {
+        "command": "npm audit --json 2>/dev/null || pip-audit --format json 2>/dev/null || echo '{\"vulnerabilities\": []}'"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "security-scan-secrets",
+      "name": "Secret Scan",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [1570, 550],
+      "parameters": {
+        "command": "trufflehog filesystem --json --fail . 2>/dev/null || echo '{\"results\": []}'"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "security-gate",
+      "name": "Security Gate",
+      "type": "n8n-nodes-base.if",
+      "position": [1790, 250],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ !$json.critical_vulnerabilities || $json.critical_vulnerabilities === 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "deploy-staging",
+      "name": "Deploy Staging",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2010, 250],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_deploy",
+          "input": {
+            "target": "staging.neuraledge.in",
+            "image": "={{ $json.repository.name }}:{{ $json.after }}",
+            "strategy": "rolling"
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "canary-deploy",
+      "name": "Canary Deploy",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2230, 250],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_deploy",
+          "input": {
+            "target": "prod.neuraledge.in",
+            "image": "={{ $json.repository.name }}:{{ $json.after }}",
+            "strategy": "canary",
+            "traffic_percentage": 5,
+            "observation_minutes": 15,
+            "rollback_conditions": {
+              "error_rate_threshold": 0.02,
+              "latency_p99_multiplier": 2.0,
+              "memory_threshold_percent": 90
+            }
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "slack-approval",
+      "name": "Slack Approval",
+      "type": "n8n-nodes-base.slack",
+      "position": [2450, 250],
+      "parameters": {
+        "channel": "#ops-approvals",
+        "text": "Canary passed for {{ $json.repository.name }}. Risk score: {{ $json.risk_score }}/10. Approve production deploy?",
+        "attachments": [
+          {
+            "color": "#36a64f",
+            "fields": [
+              { "title": "Service", "value": "{{ $json.repository.name }}", "short": true },
+              { "title": "Risk Score", "value": "{{ $json.risk_score }}/10", "short": true },
+              { "title": "Commit", "value": "{{ $json.after.substring(0, 7) }}", "short": true },
+              { "title": "Branch", "value": "{{ $json.ref.replace('refs/heads/', '') }}", "short": true }
+            ]
+          }
+        ],
+        "otherOptions": {
+          "includeLinkToWorkflow": true
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "deploy-production",
+      "name": "Deploy Production",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2670, 250],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_deploy",
+          "input": {
+            "target": "prod.neuraledge.in",
+            "image": "={{ $json.repository.name }}:{{ $json.after }}",
+            "strategy": "rolling"
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "post-deploy",
+      "name": "Post-Deploy",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2890, 250],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": {
+            "prompt": "Generate a deployment changelog from the commits. Update Context Vault with deployment record. Notify #deployments on Slack with summary.",
+            "tools": ["github_commits", "context_vault_write", "slack_notify", "axe_changelog"]
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "high-risk-alert",
+      "name": "High Risk Alert",
+      "type": "n8n-nodes-base.slack",
+      "position": [1130, 450],
+      "parameters": {
+        "channel": "#ops-approvals",
+        "text": "HIGH RISK DEPLOYMENT BLOCKED (score: {{ $json.risk_score }}/10). Manual review required for {{ $json.repository.name }}.",
+        "attachments": [
+          {
+            "color": "#ff0000",
+            "fields": [
+              { "title": "Risk Score", "value": "{{ $json.risk_score }}/10", "short": true },
+              { "title": "Reason", "value": "{{ $json.risk_reason }}", "short": false }
+            ]
+          }
+        ]
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "GitHub Webhook": { "main": [[{ "node": "Filter Events", "type": "main", "index": 0 }]] },
+    "Filter Events": { "main": [[{ "node": "AI Risk Triage", "type": "main", "index": 0 }]] },
+    "AI Risk Triage": { "main": [[{ "node": "Risk Check", "type": "main", "index": 0 }]] },
+    "Risk Check": {
+      "main": [
+        [{ "node": "Docker Build", "type": "main", "index": 0 }],
+        [{ "node": "High Risk Alert", "type": "main", "index": 0 }]
+      ]
+    },
+    "Docker Build": { "main": [[{ "node": "AI Test Selection", "type": "main", "index": 0 }]] },
+    "AI Test Selection": {
+      "main": [[
+        { "node": "Run Tests", "type": "main", "index": 0 },
+        { "node": "Snyk Container Scan", "type": "main", "index": 0 },
+        { "node": "Dependency Audit", "type": "main", "index": 0 },
+        { "node": "Secret Scan", "type": "main", "index": 0 }
+      ]]
+    },
+    "Run Tests": { "main": [[{ "node": "Security Gate", "type": "main", "index": 0 }]] },
+    "Security Gate": { "main": [[{ "node": "Deploy Staging", "type": "main", "index": 0 }]] },
+    "Deploy Staging": { "main": [[{ "node": "Canary Deploy", "type": "main", "index": 0 }]] },
+    "Canary Deploy": { "main": [[{ "node": "Slack Approval", "type": "main", "index": 0 }]] },
+    "Slack Approval": { "main": [[{ "node": "Deploy Production", "type": "main", "index": 0 }]] },
+    "Deploy Production": { "main": [[{ "node": "Post-Deploy", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "any"
+  },
+  "tags": [{ "name": "ops-neop" }, { "name": "cicd" }]
+}

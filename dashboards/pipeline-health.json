@@ -1,0 +1,50 @@
+{
+  "dashboard": {
+    "title": "Ops NEop — Pipeline Health",
+    "uid": "ops-neop-pipeline",
+    "tags": ["ops-neop", "pipeline"],
+    "timezone": "Asia/Kolkata",
+    "refresh": "1m",
+    "panels": [
+      {
+        "id": 1, "title": "Active Pipelines", "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+        "targets": [{ "expr": "ops_active_pipelines" }]
+      },
+      {
+        "id": 2, "title": "Pipeline Success Rate", "type": "gauge",
+        "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+        "targets": [{ "expr": "ops_pipeline_success_rate * 100" }],
+        "fieldConfig": { "defaults": { "max": 100, "thresholds": { "steps": [{ "value": 0, "color": "red" }, { "value": 80, "color": "yellow" }, { "value": 95, "color": "green" }] } } }
+      },
+      {
+        "id": 3, "title": "Avg Pipeline Duration (min)", "type": "stat",
+        "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+        "targets": [{ "expr": "ops_pipeline_duration_avg / 60" }]
+      },
+      {
+        "id": 4, "title": "Build Cache Hit Rate", "type": "gauge",
+        "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+        "targets": [{ "expr": "ops_build_cache_hit_rate * 100" }],
+        "fieldConfig": { "defaults": { "max": 100 } }
+      },
+      {
+        "id": 5, "title": "Test Selection Accuracy", "type": "timeseries",
+        "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+        "targets": [
+          { "expr": "ops_test_selection_accuracy * 100", "legendFormat": "Accuracy %" },
+          { "expr": "ops_test_reduction_ratio * 100", "legendFormat": "Tests Skipped %" }
+        ]
+      },
+      {
+        "id": 6, "title": "Security Scan Results", "type": "timeseries",
+        "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+        "targets": [
+          { "expr": "ops_security_findings{severity='critical'}", "legendFormat": "Critical" },
+          { "expr": "ops_security_findings{severity='high'}", "legendFormat": "High" },
+          { "expr": "ops_security_findings{severity='medium'}", "legendFormat": "Medium" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "name": "Ops NEop — Weekly Cost Report (Monday 9AM IST)",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Monday 9AM IST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "30 3 * * 1" }] }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "scan-ec2",
+      "name": "Scan EC2 Instances",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 100],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": { "prompt": "List all EC2 instances. For each, get average CPU utilization over 7 days. Flag instances with < 5% CPU as idle.", "tools": ["ec2_list", "ec2_describe", "cloudwatch_query"] }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "scan-ebs",
+      "name": "Scan EBS Volumes",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 250],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": { "prompt": "Find all unattached EBS volumes (status: available). Calculate monthly cost for each.", "tools": ["ec2_describe"] }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "scan-rds",
+      "name": "Scan RDS Instances",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 400],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": { "prompt": "Check all RDS instances. Get CPU and memory utilization over 14 days. Flag over-provisioned instances (CPU < 20%, memory < 40%).", "tools": ["rds_describe", "rds_metrics", "cloudwatch_query"] }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "scan-s3",
+      "name": "Scan S3 Buckets",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 550],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": { "prompt": "List all S3 buckets. Check for lifecycle policies. Flag buckets without policies that have data older than 90 days.", "tools": ["s3_list"] }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "compile-report",
+      "name": "Compile Cost Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [740, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": {
+            "prompt": "Compile a weekly cost optimization report. Summarize findings from EC2, EBS, RDS, and S3 scans. Calculate total potential savings. Rank recommendations by impact. Format for Slack.",
+            "context": "={{ JSON.stringify($input.all().map(i => i.json)) }}"
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "post-slack",
+      "name": "Post to #eng-metrics",
+      "type": "n8n-nodes-base.slack",
+      "position": [960, 300],
+      "parameters": {
+        "channel": "#eng-metrics",
+        "text": "={{ $json.report }}"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "store-report",
+      "name": "Store Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1180, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "context_vault_write",
+          "input": { "table": "audit_log", "data": "={{ JSON.stringify({ type: 'cost_report', report: $json }) }}" }
+        }
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Monday 9AM IST": { "main": [[{ "node": "Scan EC2 Instances", "type": "main", "index": 0 }, { "node": "Scan EBS Volumes", "type": "main", "index": 0 }, { "node": "Scan RDS Instances", "type": "main", "index": 0 }, { "node": "Scan S3 Buckets", "type": "main", "index": 0 }]] },
+    "Scan EC2 Instances": { "main": [[{ "node": "Compile Cost Report", "type": "main", "index": 0 }]] },
+    "Scan EBS Volumes": { "main": [[{ "node": "Compile Cost Report", "type": "main", "index": 0 }]] },
+    "Scan RDS Instances": { "main": [[{ "node": "Compile Cost Report", "type": "main", "index": 0 }]] },
+    "Scan S3 Buckets": { "main": [[{ "node": "Compile Cost Report", "type": "main", "index": 0 }]] },
+    "Compile Cost Report": { "main": [[{ "node": "Post to #eng-metrics", "type": "main", "index": 0 }]] },
+    "Post to #eng-metrics": { "main": [[{ "node": "Store Report", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "ops-neop" }, { "name": "cost" }]
+}

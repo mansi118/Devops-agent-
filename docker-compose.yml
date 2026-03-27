@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  stakpak:
+    image: ghcr.io/stakpak/agent:latest
+    volumes:
+      - ./config:/root/.stakpak
+      - ./neps:/root/.stakpak/rulebooks
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./workspace:/workspace
+    environment:
+      - STAKPAK_API_KEY=${STAKPAK_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    ports:
+      - "8765:8765"
+      - "3456:3456"
+    restart: unless-stopped
+    networks:
+      - ops-network
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - ops-network
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./dashboards:/etc/grafana/provisioning/dashboards
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    networks:
+      - ops-network
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - "9100:9100"
+    networks:
+      - ops-network
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  ops-network:
+    driver: bridge

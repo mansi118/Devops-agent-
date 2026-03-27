@@ -1,0 +1,131 @@
+{
+  "name": "Ops NEop — Daily Briefing (8:30AM IST)",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Daily 8:30AM IST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 3 * * *" }] }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "overnight-alerts",
+      "name": "Fetch Overnight Alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 150],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "context_vault_query",
+          "input": { "table": "incidents", "filter": { "detected_after": "={{ new Date(Date.now() - 86400000).toISOString() }}" }, "limit": 20 }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "deploy-summary",
+      "name": "Fetch Deployment Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "context_vault_query",
+          "input": { "table": "deployments", "filter": { "deployed_after": "={{ new Date(Date.now() - 86400000).toISOString() }}" }, "limit": 20 }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "dora-metrics",
+      "name": "Fetch DORA Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 450],
+      "parameters": {
+        "url": "http://localhost:9090/api/v1/query",
+        "method": "GET",
+        "queryParameters": { "query": "ops_deployment_frequency_daily" }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "upcoming-expirations",
+      "name": "Upcoming Expirations",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 600],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": { "prompt": "Check for certificates expiring within 30 days and secrets due for rotation.", "tools": ["check_cert_status", "secrets_get"] }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "compile-briefing",
+      "name": "Compile Briefing",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [740, 300],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "stakpak_analyze",
+          "input": {
+            "prompt": "Compile a morning infrastructure briefing for ML. Include: overnight alerts summary, deployment summary (successes/failures), DORA metrics snapshot, upcoming certificate/secret expirations, and any action items. Keep it concise and actionable.",
+            "context": "={{ JSON.stringify($input.all().map(i => i.json)) }}"
+          }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "send-to-cos",
+      "name": "Send to Chief of Staff",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [960, 200],
+      "parameters": {
+        "url": "http://localhost:8765/mcp/invoke",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "tool": "send_to_neop",
+          "input": { "neop": "chief-of-staff", "message_type": "daily_briefing", "data": "={{ JSON.stringify($json) }}" }
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "post-slack",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "position": [960, 400],
+      "parameters": {
+        "channel": "#eng-metrics",
+        "text": "={{ $json.briefing }}"
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Daily 8:30AM IST": { "main": [[{ "node": "Fetch Overnight Alerts", "type": "main", "index": 0 }, { "node": "Fetch Deployment Summary", "type": "main", "index": 0 }, { "node": "Fetch DORA Metrics", "type": "main", "index": 0 }, { "node": "Upcoming Expirations", "type": "main", "index": 0 }]] },
+    "Fetch Overnight Alerts": { "main": [[{ "node": "Compile Briefing", "type": "main", "index": 0 }]] },
+    "Fetch Deployment Summary": { "main": [[{ "node": "Compile Briefing", "type": "main", "index": 0 }]] },
+    "Fetch DORA Metrics": { "main": [[{ "node": "Compile Briefing", "type": "main", "index": 0 }]] },
+    "Upcoming Expirations": { "main": [[{ "node": "Compile Briefing", "type": "main", "index": 0 }]] },
+    "Compile Briefing": { "main": [[{ "node": "Send to Chief of Staff", "type": "main", "index": 0 }, { "node": "Post to Slack", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "ops-neop" }, { "name": "briefing" }]
+}

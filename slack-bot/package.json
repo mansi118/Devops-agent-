@@ -1,0 +1,20 @@
+{
+  "name": "ops-neop-slack-bot",
+  "version": "1.0.0",
+  "description": "NeuralEDGE Ops NEop Slack Bot — Approvals, alerts, and commands",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "@slack/bolt": "^3.17.0",
+    "@slack/web-api": "^6.11.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.4.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

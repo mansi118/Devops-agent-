@@ -1,0 +1,49 @@
+{
+  "dashboard": {
+    "title": "Ops NEop — DORA Metrics",
+    "uid": "ops-neop-dora",
+    "tags": ["ops-neop", "dora"],
+    "timezone": "Asia/Kolkata",
+    "refresh": "5m",
+    "panels": [
+      {
+        "id": 1, "title": "Deployment Frequency (per day)", "type": "timeseries",
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+        "targets": [{ "expr": "increase(ops_deployments_total[24h])", "legendFormat": "{{environment}}" }]
+      },
+      {
+        "id": 2, "title": "Lead Time for Changes (hours)", "type": "timeseries",
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+        "targets": [{ "expr": "ops_lead_time_hours", "legendFormat": "Lead Time" }]
+      },
+      {
+        "id": 3, "title": "Change Failure Rate (%)", "type": "gauge",
+        "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 },
+        "targets": [{ "expr": "ops_change_failure_rate * 100" }],
+        "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "value": 0, "color": "green" }, { "value": 15, "color": "yellow" }, { "value": 30, "color": "red" }] }, "max": 100 } }
+      },
+      {
+        "id": 4, "title": "Mean Time to Recovery (minutes)", "type": "gauge",
+        "gridPos": { "x": 8, "y": 8, "w": 8, "h": 8 },
+        "targets": [{ "expr": "ops_mttr_minutes" }],
+        "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "value": 0, "color": "green" }, { "value": 30, "color": "yellow" }, { "value": 120, "color": "red" }] }, "max": 240 } }
+      },
+      {
+        "id": 5, "title": "DORA Performance Level", "type": "stat",
+        "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+        "targets": [{ "expr": "ops_dora_level" }],
+        "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "Low" }, "2": { "text": "Medium" }, "3": { "text": "High" }, "4": { "text": "Elite" } } }] } }
+      },
+      {
+        "id": 6, "title": "Deployment Success Rate Trend", "type": "timeseries",
+        "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+        "targets": [{ "expr": "rate(ops_deployments_total{status='success'}[7d]) / rate(ops_deployments_total[7d]) * 100", "legendFormat": "Success %" }]
+      },
+      {
+        "id": 7, "title": "Rollback Frequency", "type": "timeseries",
+        "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+        "targets": [{ "expr": "increase(ops_rollbacks_total[7d])", "legendFormat": "Rollbacks" }]
+      }
+    ]
+  }
+}
